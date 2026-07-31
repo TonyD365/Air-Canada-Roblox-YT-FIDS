@@ -299,10 +299,22 @@ class ClockLayer(CachedRegionLayer):
 class FlightTableLayer(Layer):
     """The flight rows of the current page.
 
-    This layer draws variable-height rows directly onto the frame. It does not
-    cache because row heights change based on text content, making the cache
-    key complex. The performance impact is minimal since text rasterisation
-    is already the dominant cost.
+    Performance: the table is by far the largest block of text on the board,
+    yet its content only changes when the timetable refreshes (~every 30s), a
+    status blinks (twice a second) or the page flips.  Rasterising it 30 times a
+    second is what starves the frame clock, so the layer follows the same
+    caching philosophy as the ticker and the clock:
+
+    * the whole static picture (zebra rows, separators, and every cell whose
+      text fits) is painted **once** into a cached base image and only repainted
+      when its :meth:`_base_key` changes;
+    * cells whose text overflows their column scroll.  Their text is
+      pre-rasterised **once** into a strip (keyed by text + colour) and every
+      frame only pastes a shifted crop of that strip -- no per-frame
+      ``Image.new`` / ``draw.text`` on the hot path.
+
+    The net effect turns a per-frame cost of dozens of text rasterisations into
+    a single ``paste`` plus a handful of crops.
     """
 
     #: Blink frequency of BOARDING / FINAL CALL statuses, in hertz.
@@ -310,94 +322,109 @@ class FlightTableLayer(Layer):
     #: How dark a blinking status gets in its "off" phase (never fully black:
     #: a hard on/off flicker is unreadable after video compression).
     BLINK_OFF_FACTOR: Final[float] = 0.22
-    #: Scroll speed in pixels per second
+    #: Scroll speed in pixels per second.
     SCROLL_SPEED: Final[float] = 120.0
 
     def __init__(self, theme: Theme, layout: Layout, fonts: FontRegistry) -> None:
         super().__init__(theme, layout, fonts)
-        self._scroll_positions: dict[tuple[int, int], float] = {}  # (row_index, col_index) -> position
-        self._scroll_directions: dict[tuple[int, int], int] = {}  # (row_index, col_index) -> direction (1 or -1)
+        # Cached static base of the whole table region.
+        self._base: Image.Image | None = None
+        self._base_key: Hashable = None
+        # Which (content) the cached scroll strips / positions belong to; used
+        # to reset animation state when the visible flights change.
+        self._content_key: Hashable = None
+        # Pre-rasterised text strips for overflowing cells: (text, colour) -> RGBA strip.
+        self._strips: dict[tuple[str, tuple[int, int, int]], Image.Image] = {}
+        # Scroll animation state, keyed by (row_index, col_index).
+        self._scroll_positions: dict[tuple[int, int], float] = {}
+        self._scroll_directions: dict[tuple[int, int], int] = {}
 
     def draw(self, image: Image.Image, draw: ImageDraw.ImageDraw, ctx: FrameContext) -> None:
-        """Paint the flight table directly onto the image."""
+        """Paint the flight table onto the image."""
         self.paint(image, draw, ctx)
 
     def paint(self, image: Image.Image, draw: ImageDraw.ImageDraw, ctx: FrameContext) -> None:
         flights = ctx.page_flights
         if not flights:
+            # Invalidate the cache so the table repaints when flights return.
+            self._base = None
+            self._base_key = None
             self._draw_empty(draw, image, ctx)
             return
+
         blink_on = ctx.blink_on(self.BLINK_HZ)
-        layout = self._layout
-        theme = self._theme
-        
-        # Calculate row heights and positions
-        row_heights = []
-        for flight in flights:
-            height = self._calculate_row_height(draw, flight, layout)
-            row_heights.append(height)
-        
-        # Draw row backgrounds first (starting from rows_top, not 0)
-        y_offset = layout.rows_top
-        for index, row_height in enumerate(row_heights):
-            # Draw zebra row background
-            fill = theme.row_background_even if index % 2 else theme.row_background_odd
-            draw.rectangle((0, y_offset, layout.width, y_offset + row_height), fill=fill)
-            # Draw row separator
-            draw.line((0, y_offset + row_height, layout.width, y_offset + row_height), 
-                     fill=theme.row_separator, width=1)
-            y_offset += row_height
-        
-        # Draw rows with variable heights (starting from rows_top)
-        y_offset = layout.rows_top
-        for index, (flight, row_height) in enumerate(zip(flights, row_heights)):
-            self._draw_row(draw, image, index, flight, blink_on, y_offset, row_height, ctx)
-            y_offset += row_height
+
+        # When the visible flights (or page) change, the scroll animation and
+        # its cached strips no longer refer to the same cells: reset them.
+        content_key: Hashable = (flights, ctx.page_index)
+        if content_key != self._content_key:
+            self._content_key = content_key
+            self._scroll_positions.clear()
+            self._scroll_directions.clear()
+            self._strips.clear()
+
+        # Repaint the static base only when its content actually changed.
+        base_key: Hashable = (content_key, blink_on)
+        if self._base is None or base_key != self._base_key:
+            self._base = self._render_base(flights, blink_on)
+            self._base_key = base_key
+
+        image.paste(self._base, (0, self._layout.rows_top))
+        self._draw_scrolling_cells(image, draw, flights, blink_on)
 
     # ------------------------------------------------------------------ #
-    # Internals -- all coordinates are local to the region
+    # Static base (rebuilt only when content / blink / page changes)
     # ------------------------------------------------------------------ #
-    def _calculate_row_height(
-        self, draw: ImageDraw.ImageDraw, flight: Flight, layout: Layout
-    ) -> int:
-        """Calculate the height needed for this row (always single line)."""
-        return layout.row_height
-
-    def _draw_row(
-        self,
-        draw: ImageDraw.ImageDraw,
-        image: Image.Image,
-        index: int,
-        flight: Flight,
-        blink_on: bool,
-        y_offset: int = 0,
-        row_height: int | None = None,
-        ctx: FrameContext | None = None,
-    ) -> None:
+    def _render_base(self, flights: Sequence[Flight], blink_on: bool) -> Image.Image:
+        """Paint zebra rows plus every non-scrolling cell into a cached image."""
         layout, theme = self._layout, self._theme
-        if row_height is None:
-            row_height = layout.row_height
-        centre_y = y_offset + row_height // 2
+        table_height = layout.rows_bottom - layout.rows_top
+        base = Image.new("RGB", (layout.width, max(table_height, 1)), theme.background)
+        draw = ImageDraw.Draw(base)
         font = self._fonts.bold(layout.row_font_size)
         remark_font = self._fonts.regular(layout.remark_font_size)
 
-        values: dict[str, tuple[str, tuple[int, int, int]]] = {
-            "time": (flight.scheduled_label, theme.primary_text),
-            "flight": (flight.flight_number, theme.highlight_text),
-            "destination": (flight.destination.upper(), theme.primary_text),
-            "departure": (flight.departure.upper(), theme.primary_text),
-            "gate": (flight.gate, theme.primary_text),
-            "status": (flight.status.label, flight.status.colour),
-        }
+        row_height = layout.row_height
+        y = 0
+        for index, flight in enumerate(flights):
+            fill = theme.row_background_even if index % 2 else theme.row_background_odd
+            draw.rectangle((0, y, layout.width, y + row_height), fill=fill)
+            draw.line((0, y + row_height, layout.width, y + row_height), fill=theme.row_separator, width=1)
+            self._paint_row_static(draw, index, flight, blink_on, y, row_height, font, remark_font)
+            y += row_height
+        return base
 
+    def _paint_row_static(
+        self,
+        draw: ImageDraw.ImageDraw,
+        index: int,
+        flight: Flight,
+        blink_on: bool,
+        y_top: int,
+        row_height: int,
+        font,
+        remark_font,
+    ) -> None:
+        """Paint one row into the base; overflowing cells are left for the overlay."""
+        layout, theme = self._layout, self._theme
+        centre_y = y_top + row_height // 2
         has_remark = bool(flight.remark)
         text_y = centre_y - int(row_height * 0.12) if has_remark else centre_y
 
-        for col_index, column in enumerate(layout.columns):
+        values = self._row_values(flight)
+        for column in layout.columns:
             text, colour = values[column.key]
             if column.key == "status" and flight.status.blinking and not blink_on:
                 colour = dim(colour, self.BLINK_OFF_FACTOR)
-            self._draw_cell(draw, image, column, text, colour, font, text_y, index, col_index, ctx)
+            left, right = layout.column_box(column)
+            max_width = right - left
+            if max_width <= 0:
+                continue
+            # Overflowing cells scroll: they are drawn per-frame by the overlay.
+            if draw.textlength(text, font=font) > max_width:
+                continue
+            x, anchor = layout.anchor_x(column)
+            draw.text((x, text_y), text, font=font, fill=colour, anchor=anchor)
 
         if has_remark:
             column = self._column("destination")
@@ -411,94 +438,93 @@ class FlightTableLayer(Layer):
                 anchor="lm",
             )
 
-    def _count_text_lines(self, draw: ImageDraw.ImageDraw, text: str, font, max_width: int) -> int:
-        """Count how many lines the text will need when wrapped."""
-        if max_width <= 0 or not text:
-            return 1
-        if draw.textlength(text, font=font) <= max_width:
-            return 1
-        
-        # Split text into words and calculate lines
-        words = text.split()
-        if not words:
-            return 1
-        
-        lines = 0
-        current_line = ""
-        for word in words:
-            test_line = current_line + " " + word if current_line else word
-            if draw.textlength(test_line, font=font) <= max_width:
-                current_line = test_line
-            else:
-                lines += 1
-                current_line = word
-        if current_line:
-            lines += 1
-        
-        return max(1, lines)
-
-    def _draw_cell(
+    # ------------------------------------------------------------------ #
+    # Scrolling overlay (cheap per-frame path)
+    # ------------------------------------------------------------------ #
+    def _draw_scrolling_cells(
         self,
-        draw: ImageDraw.ImageDraw,
         image: Image.Image,
-        column: Column,
+        draw: ImageDraw.ImageDraw,
+        flights: Sequence[Flight],
+        blink_on: bool,
+    ) -> None:
+        """Paste a shifted crop of each overflowing cell's pre-rasterised strip."""
+        layout = self._layout
+        font = self._fonts.bold(layout.row_font_size)
+        row_height = layout.row_height
+
+        for row_index, flight in enumerate(flights):
+            row_top = layout.rows_top + row_index * row_height
+            centre_y = row_top + row_height // 2
+            has_remark = bool(flight.remark)
+            text_y = centre_y - int(row_height * 0.12) if has_remark else centre_y
+
+            values = self._row_values(flight)
+            for col_index, column in enumerate(layout.columns):
+                text, colour = values[column.key]
+                if column.key == "status" and flight.status.blinking and not blink_on:
+                    colour = dim(colour, self.BLINK_OFF_FACTOR)
+                left, right = layout.column_box(column)
+                max_width = right - left
+                if max_width <= 0:
+                    continue
+                text_width = int(draw.textlength(text, font=font))
+                if text_width <= max_width:
+                    continue  # fits -> already painted into the cached base
+
+                strip = self._ensure_strip(text, colour, font, text_width, row_height)
+                pos = self._advance_scroll(row_index, col_index, text_width, max_width)
+                crop = strip.crop((pos, 0, pos + max_width, row_height))
+                image.paste(crop, (left, text_y - row_height // 2), crop)
+
+    def _ensure_strip(
+        self,
         text: str,
         colour: tuple[int, int, int],
         font,
-        y: int,
-        row_index: int = 0,
-        col_index: int = 0,
-        ctx: FrameContext | None = None,
-    ) -> None:
-        layout = self._layout
-        left, right = layout.column_box(column)
-        x, anchor = layout.anchor_x(column)
-        max_width = right - left
-        
-        if max_width <= 0:
-            return
-        
-        # Check if text needs scrolling
-        text_width = draw.textlength(text, font=font)
-        if text_width > max_width and ctx is not None:
-            # Text is too long - implement scrolling
-            scroll_key = (row_index, col_index)
-            
-            # Initialize scroll position if needed
-            if scroll_key not in self._scroll_positions:
-                self._scroll_positions[scroll_key] = 0.0
-                self._scroll_directions[scroll_key] = 1
-            
-            # Update scroll position
-            current_pos = self._scroll_positions[scroll_key]
-            direction = self._scroll_directions[scroll_key]
-            
-            # Move text
-            current_pos += direction * self.SCROLL_SPEED * (1.0 / 30.0)  # Assuming 30 fps
-            
-            # Check bounds and reverse direction
-            max_scroll = text_width - max_width
-            if current_pos >= max_scroll:
-                current_pos = max_scroll
-                self._scroll_directions[scroll_key] = -1
-            elif current_pos < 0:
-                current_pos = 0
-                self._scroll_directions[scroll_key] = 1
-            
-            self._scroll_positions[scroll_key] = current_pos
-            
-            # Draw scrolling text using clipping
-            # Create a temporary image for the text
-            text_img = Image.new("RGBA", (int(text_width) + 2, int(layout.row_height)), (0, 0, 0, 0))
-            text_draw = ImageDraw.Draw(text_img)
-            text_draw.text((0, layout.row_height // 2), text, font=font, fill=colour, anchor="lm")
-            
-            # Paste the text with offset
-            image.paste(text_img.crop((int(current_pos), 0, int(current_pos) + max_width, layout.row_height)), 
-                       (left, int(y - layout.row_height // 2)), text_img.crop((int(current_pos), 0, int(current_pos) + max_width, layout.row_height)))
-        else:
-            # Text fits, just draw it
-            draw.text((x, y), fit_text(draw, text, font, max_width), font=font, fill=colour, anchor=anchor)
+        text_width: int,
+        height: int,
+    ) -> Image.Image:
+        """Rasterise ``text`` once into a transparent strip and cache it."""
+        key = (text, colour)
+        strip = self._strips.get(key)
+        if strip is not None:
+            return strip
+        strip = Image.new("RGBA", (text_width + 2, height), (0, 0, 0, 0))
+        strip_draw = ImageDraw.Draw(strip)
+        strip_draw.text((0, height // 2), text, font=font, fill=colour, anchor="lm")
+        self._strips[key] = strip
+        return strip
+
+    def _advance_scroll(
+        self, row_index: int, col_index: int, text_width: int, max_width: int
+    ) -> int:
+        """Advance and bounce the scroll offset for one cell; return it in pixels."""
+        key = (row_index, col_index)
+        pos = self._scroll_positions.get(key, 0.0)
+        direction = self._scroll_directions.get(key, 1)
+        pos += direction * self.SCROLL_SPEED * (1.0 / 30.0)
+        max_scroll = float(text_width - max_width)
+        if pos >= max_scroll:
+            pos = max_scroll
+            direction = -1
+        elif pos <= 0.0:
+            pos = 0.0
+            direction = 1
+        self._scroll_positions[key] = pos
+        self._scroll_directions[key] = direction
+        return int(pos)
+
+    def _row_values(self, flight: Flight) -> dict[str, tuple[str, tuple[int, int, int]]]:
+        theme = self._theme
+        return {
+            "time": (flight.scheduled_label, theme.primary_text),
+            "flight": (flight.flight_number, theme.highlight_text),
+            "destination": (flight.destination.upper(), theme.primary_text),
+            "departure": (flight.departure.upper(), theme.primary_text),
+            "gate": (flight.gate, theme.primary_text),
+            "status": (flight.status.label, flight.status.colour),
+        }
 
     def _column(self, key: str) -> Column:
         for column in self._layout.columns:
