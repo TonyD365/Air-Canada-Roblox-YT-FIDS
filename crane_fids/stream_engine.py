@@ -350,7 +350,7 @@ class FFmpegStreamEngine(StreamEngine):
             return
         try:
             for raw_line in iter(stream.readline, b""):
-                line = raw_line.decode("utf-8", errors="replace").strip()
+                line = self._redact_secrets(raw_line.decode("utf-8", errors="replace").strip())
                 if not line:
                     continue
                 if any(token in line.lower() for token in ("error", "failed", "invalid")):
@@ -362,3 +362,19 @@ class FFmpegStreamEngine(StreamEngine):
         finally:
             with contextlib.suppress(OSError):
                 stream.close()
+
+    def _redact_secrets(self, line: str) -> str:
+        """Strip the RTMP stream key from an FFmpeg log line before it is logged.
+
+        FFmpeg prints the full ingest URL (key and all) in its own stderr, e.g.
+        ``rtmps://a.rtmps.youtube.com/live2/<key>: End of file``.  Our own log
+        lines are already redacted; this closes the one remaining leak so a
+        stream key can never reach the logs (or a screenshot of them).
+        """
+        url = self._stream.rtmp_url
+        if url and url in line:
+            line = line.replace(url, redact_rtmp_url(url))
+        key = url.rpartition("/")[2]
+        if len(key) >= 4 and key in line:
+            line = line.replace(key, "<stream-key-redacted>")
+        return line

@@ -151,3 +151,11 @@ class TestStreamEngine:
         engine = FFmpegStreamEngine(VideoConfig(), StreamConfig(rtmp_url="rtmp://example.test/x"))
         with pytest.raises(ValueError):
             engine.write(b"too-short")
+
+    def test_stream_key_is_redacted_from_ffmpeg_stderr(self) -> None:
+        url = "rtmps://a.rtmps.youtube.com/live2/u4mu-gaza-c8jc-sgjd-a2zr"
+        engine = FFmpegStreamEngine(VideoConfig(), StreamConfig(rtmp_url=url))
+        # FFmpeg prints the full URL, and sometimes the bare key, in its stderr.
+        assert "u4mu-gaza-c8jc-sgjd-a2zr" not in engine._redact_secrets(f"ffmpeg: {url}: End of file")
+        assert "u4mu-gaza-c8jc-sgjd-a2zr" not in engine._redact_secrets("key=u4mu-gaza-c8jc-sgjd-a2zr")
+        assert "<stream-key-redacted>" in engine._redact_secrets(f"opening {url}")
