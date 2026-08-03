@@ -4,7 +4,7 @@ FROM python:3.12-slim-bookworm
 
 LABEL org.opencontainers.image.title="Crane-Airlines-YT-FIDS" \
       org.opencontainers.image.description="Airport style FIDS rendered with Pillow and streamed to YouTube via FFmpeg" \
-      org.opencontainers.image.source="https://github.com/TonyD365/Crane-Airlines-YT-FIDS" \
+      org.opencontainers.image.source="https://github.com/TonyD365/Air-Canada-Roblox-YT-FIDS" \
       org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONUNBUFFERED=1 \
@@ -31,7 +31,7 @@ deb http://security.debian.org/debian-security bookworm-security main\n" > /etc/
 WORKDIR /app
 
 # 可修改仓库及分支
-ARG GIT_REPO=https://github.com/TonyD365/Crane-Airlines-YT-FIDS.git
+ARG GIT_REPO=https://github.com/TonyD365/Air-Canada-Roblox-YT-FIDS.git
 ARG GIT_BRANCH=main
 
 # Clone 最新代码
