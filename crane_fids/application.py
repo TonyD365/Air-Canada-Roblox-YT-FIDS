@@ -127,7 +127,7 @@ class Application:
             A process exit code: ``0`` for a clean shutdown.
         """
         config = self._config
-        _LOG.info("Crane Airlines FIDS starting: %s", config.describe())
+        _LOG.info("%s FIDS starting: %s", config.airline_name, config.describe())
 
         try:
             self._engine.start()
@@ -196,6 +196,7 @@ class Application:
             airport_name=self._config.airport_name,
             board_title=self._config.board_title,
             ticker_text=self._config.ticker_text,
+            disclaimer_text=self._config.disclaimer_text,
             timezone_label=self._config.timezone_label,
             rows_per_page=self._config.rows_per_page,
             page_seconds=self._config.page_seconds,

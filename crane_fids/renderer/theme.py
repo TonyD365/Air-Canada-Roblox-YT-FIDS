@@ -17,28 +17,40 @@ RGB = tuple[int, int, int]
 
 @dataclass(frozen=True, slots=True)
 class Theme:
-    """Colour palette of an airport board: black canvas, white type, accents."""
+    """Colour palette of an airport board.
+
+    Air Canada inspired livery: a red header/ticker with white type over a dark,
+    high-contrast departures board (dark keeps a wall of small text readable at
+    1080p while the red/white accents carry the brand).
+    """
+
+    #: Air Canada signature red, and a brighter variant for accents.
+    _AC_RED: RGB = (216, 20, 44)
+    _AC_RED_BRIGHT: RGB = (237, 27, 47)
 
     background: RGB = (8, 9, 12)
-    header_background: RGB = (14, 16, 22)
-    header_accent: RGB = (255, 214, 0)
+    header_background: RGB = (200, 16, 46)
+    header_accent: RGB = (255, 255, 255)
     header_text: RGB = (255, 255, 255)
-    board_title: RGB = (255, 214, 0)
-    column_header_background: RGB = (22, 25, 33)
+    board_title: RGB = (255, 255, 255)
+    column_header_background: RGB = (22, 23, 26)
     column_header_text: RGB = (150, 158, 170)
     row_background_odd: RGB = (8, 9, 12)
-    row_background_even: RGB = (16, 18, 24)
-    row_separator: RGB = (32, 36, 46)
+    row_background_even: RGB = (18, 19, 22)
+    row_separator: RGB = (44, 30, 34)
     primary_text: RGB = (255, 255, 255)
-    highlight_text: RGB = (255, 214, 0)
+    highlight_text: RGB = (237, 27, 47)
     muted_text: RGB = (150, 158, 170)
-    remark_text: RGB = (255, 138, 0)
-    ticker_background: RGB = (14, 16, 22)
-    ticker_text: RGB = (255, 214, 0)
+    remark_text: RGB = (237, 27, 47)
+    ticker_background: RGB = (200, 16, 46)
+    ticker_text: RGB = (255, 255, 255)
     clock_text: RGB = (255, 255, 255)
-    clock_seconds: RGB = (255, 214, 0)
-    page_indicator_active: RGB = (255, 214, 0)
-    page_indicator_idle: RGB = (60, 66, 80)
+    clock_seconds: RGB = (237, 27, 47)
+    page_indicator_active: RGB = (255, 255, 255)
+    page_indicator_idle: RGB = (150, 70, 82)
+    #: The always-on "unofficial fan project" strip at the very bottom.
+    disclaimer_background: RGB = (14, 14, 16)
+    disclaimer_text: RGB = (176, 182, 192)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +95,8 @@ class Layout:
     header_height_ratio: float = 0.102
     column_header_height_ratio: float = 0.056
     ticker_height_ratio: float = 0.065
+    #: Thin always-on strip at the very bottom carrying the legal disclaimer.
+    disclaimer_height_ratio: float = 0.030
     margin_ratio: float = 0.031
 
     # -- derived, filled in __post_init__ ------------------------------- #
@@ -94,14 +108,17 @@ class Layout:
     row_height: int = field(init=False)
     ticker_top: int = field(init=False)
     ticker_height: int = field(init=False)
+    disclaimer_top: int = field(init=False)
+    disclaimer_height: int = field(init=False)
     margin: int = field(init=False)
 
     def __post_init__(self) -> None:
         header_height = int(self.height * self.header_height_ratio)
         column_header_height = int(self.height * self.column_header_height_ratio)
         ticker_height = int(self.height * self.ticker_height_ratio)
+        disclaimer_height = int(self.height * self.disclaimer_height_ratio)
         rows_top = header_height + column_header_height
-        rows_bottom = self.height - ticker_height
+        rows_bottom = self.height - ticker_height - disclaimer_height
         row_height = (rows_bottom - rows_top) // max(self.rows_per_page, 1)
 
         object.__setattr__(self, "header_height", header_height)
@@ -112,6 +129,8 @@ class Layout:
         object.__setattr__(self, "row_height", row_height)
         object.__setattr__(self, "ticker_top", rows_bottom)
         object.__setattr__(self, "ticker_height", ticker_height)
+        object.__setattr__(self, "disclaimer_top", rows_bottom + ticker_height)
+        object.__setattr__(self, "disclaimer_height", disclaimer_height)
         object.__setattr__(self, "margin", int(self.width * self.margin_ratio))
 
     # ------------------------------------------------------------------ #
@@ -186,3 +205,8 @@ class Layout:
     def ticker_font_size(self) -> int:
         """Font size of the scrolling welcome message."""
         return int(self.ticker_height * 0.46)
+
+    @property
+    def disclaimer_font_size(self) -> int:
+        """Font size of the bottom disclaimer strip."""
+        return int(self.disclaimer_height * 0.52)

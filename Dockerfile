@@ -50,7 +50,7 @@ ENV WIDTH=1920 \
     HEIGHT=1080 \
     FPS=30 \
     LOG_LEVEL=INFO \
-    AIRPORT_NAME="CRANE INTERNATIONAL AIRPORT" \
+    AIRLINE_NAME="AIR CANADA ROBLOX" \
     FONT_DIR=/app/assets/fonts
 
 HEALTHCHECK --interval=5m --timeout=30s --start-period=30s --retries=3 \

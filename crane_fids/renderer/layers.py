@@ -34,6 +34,7 @@ __all__ = [
     "ChromeLayer",
     "ClockLayer",
     "ColumnHeaderLayer",
+    "DisclaimerLayer",
     "FlightTableLayer",
     "HeaderLayer",
     "Layer",
@@ -167,9 +168,10 @@ class ChromeLayer(Layer):
             fill=theme.column_header_background,
         )
 
-        # Ticker band.
+        # Ticker band (sits above the always-on disclaimer strip).
         draw.rectangle(
-            (0, layout.ticker_top, layout.width, layout.height), fill=theme.ticker_background
+            (0, layout.ticker_top, layout.width, layout.disclaimer_top),
+            fill=theme.ticker_background,
         )
         draw.line(
             (0, layout.ticker_top, layout.width, layout.ticker_top),
@@ -638,6 +640,43 @@ class TickerLayer(Layer):
         return strip
 
 
+class DisclaimerLayer(Layer):
+    """Always-on legal strip at the very bottom of the board.
+
+    This is a fan/community project, so an unmissable, permanent notice makes it
+    clear the board is unofficial and unaffiliated.  It is static (the text is
+    configuration, never per-frame), so it is painted once into the cached
+    background.
+    """
+
+    is_static = True
+
+    def draw(self, image: Image.Image, draw: ImageDraw.ImageDraw, ctx: FrameContext) -> None:
+        layout, theme = self._layout, self._theme
+        draw.rectangle(
+            (0, layout.disclaimer_top, layout.width, layout.height),
+            fill=theme.disclaimer_background,
+        )
+        draw.line(
+            (0, layout.disclaimer_top, layout.width, layout.disclaimer_top),
+            fill=theme.row_separator,
+            width=1,
+        )
+        text = ctx.disclaimer_text.strip()
+        if not text:
+            return
+        font = self._fonts.regular(layout.disclaimer_font_size)
+        centre_y = layout.disclaimer_top + layout.disclaimer_height // 2
+        max_width = layout.width - 2 * layout.margin
+        draw.text(
+            (layout.width // 2, centre_y),
+            fit_text(draw, text, font, max_width),
+            font=font,
+            fill=theme.disclaimer_text,
+            anchor="mm",
+        )
+
+
 def default_layers(theme: Theme, layout: Layout, fonts: FontRegistry) -> Sequence[Layer]:
     """Return the layer stack of the departures board, in painting order."""
     return (
@@ -648,4 +687,5 @@ def default_layers(theme: Theme, layout: Layout, fonts: FontRegistry) -> Sequenc
         FlightTableLayer(theme, layout, fonts),
         PageIndicatorLayer(theme, layout, fonts),
         TickerLayer(theme, layout, fonts),
+        DisclaimerLayer(theme, layout, fonts),
     )
