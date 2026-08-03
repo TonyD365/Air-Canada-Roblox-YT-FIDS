@@ -45,7 +45,8 @@ class Theme:
     ticker_background: RGB = (200, 16, 46)
     ticker_text: RGB = (255, 255, 255)
     clock_text: RGB = (255, 255, 255)
-    clock_seconds: RGB = (237, 27, 47)
+    # White on the red header (a red seconds glyph would vanish into the band).
+    clock_seconds: RGB = (255, 255, 255)
     page_indicator_active: RGB = (255, 255, 255)
     page_indicator_idle: RGB = (150, 70, 82)
     #: The always-on "unofficial fan project" strip at the very bottom.
