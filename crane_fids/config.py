@@ -120,7 +120,6 @@ class Config:
     airline_name: str
     board_title: str
     ticker_text: str
-    disclaimer_text: str
     timezone_label: str
     log_level: str
     video: VideoConfig
@@ -154,7 +153,7 @@ class Config:
             fps=_get_int(env, "FPS", 30, minimum=1, maximum=60),
         )
 
-        airport_name = _get_str(env, "AIRPORT_NAME", "")
+        airport_name = _get_str(env, "AIRPORT_NAME", "CRANE INTERNATIONAL AIRPORT")
 
         stream = StreamConfig(
             rtmp_url=_get_str(env, "RTMP_URL", ""),
@@ -175,22 +174,16 @@ class Config:
         )
 
         default_ticker = (
-            "WELCOME TO AIR CANADA ROBLOX  •  A ROBLOX FAN COMMUNITY AIRLINE  "
-            "·  WE WISH YOU A PLEASANT FLIGHT  "
+            f"WELCOME TO {airport_name}  •  CRANE AIRLINES WISHES YOU A PLEASANT FLIGHT  "
+            "·  PLEASE KEEP YOUR BAGGAGE WITH YOU AT ALL TIMES  "
             "·  BOARDING GATES CLOSE 15 MINUTES BEFORE DEPARTURE  "
-            "·  UNOFFICIAL · NOT AFFILIATED WITH AIR CANADA  "
-        )
-        default_disclaimer = (
-            "UNOFFICIAL FAN PROJECT — RUN BY FANS, NOT AFFILIATED WITH, ENDORSED BY, "
-            "OR AUTHORISED BY AIR CANADA"
         )
 
         return cls(
             airport_name=airport_name,
-            airline_name=_get_str(env, "AIRLINE_NAME", "AIR CANADA ROBLOX"),
+            airline_name=_get_str(env, "AIRLINE_NAME", "CRANE AIRLINES"),
             board_title=_get_str(env, "BOARD_TITLE", "DEPARTURES"),
             ticker_text=_get_str(env, "TICKER_TEXT", default_ticker),
-            disclaimer_text=_get_str(env, "DISCLAIMER_TEXT", default_disclaimer),
             timezone_label=_get_str(env, "TIMEZONE_LABEL", "LOCAL TIME"),
             log_level=log_level,
             video=video,

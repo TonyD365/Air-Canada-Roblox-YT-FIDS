@@ -39,19 +39,14 @@ class FrameContext:
     frame_index: int
     fps: int
     flights: tuple[Flight, ...]
-    airline_name: str = "AIR CANADA ROBLOX"
-    airport_name: str = ""
+    airline_name: str = "CRANE AIRLINES"
+    airport_name: str = "CRANE INTERNATIONAL AIRPORT"
     board_title: str = "DEPARTURES"
     ticker_text: str = ""
     timezone_label: str = "LOCAL TIME"
     rows_per_page: int = 10
     page_seconds: int = 15
     board: BoardKind = BoardKind.DEPARTURES
-    #: Always-on notice on the bottom strip (kept unaffiliated / unofficial).
-    disclaimer_text: str = (
-        "UNOFFICIAL FAN PROJECT — NOT AFFILIATED WITH, ENDORSED BY, "
-        "OR AUTHORISED BY AIR CANADA"
-    )
 
     # ------------------------------------------------------------------ #
     # Time helpers

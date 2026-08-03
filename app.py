@@ -53,7 +53,7 @@ def index() -> tuple[str, int]:
     html = """<!DOCTYPE html>
 <html>
 <head>
-    <title>Air Canada Roblox FIDS</title>
+    <title>Crane Airlines FIDS</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 40px; background: #f0f0f0; }}
         .container {{ background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }}
@@ -84,8 +84,7 @@ def index() -> tuple[str, int]:
 </head>
 <body>
     <div class="container">
-        <h1>🍁 Air Canada Roblox FIDS System</h1>
-        <p style="color:#c8102e;font-weight:bold;">Unofficial fan project — not affiliated with, endorsed by, or authorised by Air Canada.</p>
+        <h1>🛫 Crane Airlines FIDS System</h1>
         <p class="status">✓ System is running</p>
         <div class="info">
             <p><strong>Version:</strong> {version}</p>
@@ -468,7 +467,7 @@ crane_fids.set_flights(_default_flights())
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="crane-fids",
-        description="Air Canada Roblox (fan project) airport FIDS renderer and RTMP broadcaster.",
+        description="Crane Airlines airport FIDS renderer and RTMP broadcaster.",
     )
     parser.add_argument("--version", action="version", version=f"crane-fids {__version__}")
     parser.add_argument(
@@ -501,7 +500,6 @@ def _run_preview(config: Config, path: Path, seconds: float) -> int:
         airport_name=config.airport_name,
         board_title=config.board_title,
         ticker_text=config.ticker_text,
-        disclaimer_text=config.disclaimer_text,
         timezone_label=config.timezone_label,
         rows_per_page=config.rows_per_page,
         page_seconds=config.page_seconds,

@@ -70,11 +70,7 @@ class TestLayout:
         width, height = size
         layout = Layout(width=width, height=height, rows_per_page=10)
         assert 0 < layout.header_height < layout.rows_top < layout.rows_bottom <= height
-        # ticker sits above the always-on disclaimer strip; together they fill
-        # the frame to the bottom edge without overlap.
-        assert layout.ticker_top + layout.ticker_height == layout.disclaimer_top
-        assert layout.disclaimer_top + layout.disclaimer_height == height
-        assert layout.disclaimer_height > 0
+        assert layout.ticker_top + layout.ticker_height == height
         assert layout.row_height > 0
         for column in layout.columns:
             left, right = layout.column_box(column)
